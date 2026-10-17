@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebXR Crystal Alchemy: 3072 Dimensions</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; color: white;}
+        
+        #ui {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: radial-gradient(circle, #1a1a3a 0%, #000 100%); z-index: 100;
+        }
+        .upload-btn {
+            position: relative; overflow: hidden; display: inline-block;
+            padding: 20px 40px; background: linear-gradient(45deg, #0055ff, #00d4ff);
+            color: white; font-size: 24px; font-weight: bold; border-radius: 50px;
+            cursor: pointer; transition: transform 0.2s; box-shadow: 0 0 30px rgba(0, 212, 255, 0.6);
+        }
+        .upload-btn input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; }
+        #instructions { margin-top: 30px; text-align: center; line-height: 1.8; color: #ccc; }
+        #loading { display: none; margin-top: 20px; font-size: 20px; color: #00d4ff; }
+        
+        #hud {
+            position: absolute; top: 10px; width: 100%; text-align: center;
+            pointer-events: none; z-index: 50; display: none; text-shadow: 0 0 5px #000; font-size: 18px;
+        }
+
+        /* 컨트롤 패널 UI */
+        #control-panel {
+            position: absolute; left: 20px; top: 20px; width: 320px; bottom: 20px;
+            background: rgba(0, 10, 30, 0.8); border: 1px solid #00d4ff; border-radius: 10px;
+            display: none; flex-direction: column; padding: 15px; box-sizing: border-box;
+            z-index: 60; backdrop-filter: blur(5px);
+            transition: opacity 0.3s ease;
+        }
+        #control-panel h2 { margin: 0 0 10px 0; font-size: 18px; color: #00d4ff; }
+        #search-input {
+            width: 100%; padding: 10px; border: none; border-radius: 5px; background: #fff;
+            color: #000; margin-bottom: 10px; font-weight: bold; outline: none; box-sizing: border-box;
+        }
+        #entity-list { flex-grow: 1; overflow-y: auto; list-style: none; padding: 0; margin: 0; }
+        #entity-list li {
+            padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.1); cursor: pointer;
+            transition: background 0.2s; display: flex; justify-content: space-between;
+        }
+        #entity-list li:hover { background: rgba(0, 212, 255, 0.2); }
+        .selected-item { color: #00ffcc; font-weight: bold; background: rgba(0, 212, 255, 0.1); }
+        .badge { font-size: 12px; background: #444; padding: 2px 6px; border-radius: 10px; }
+        
+        /* 녹화 및 초기화 버튼 */
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        .btn-panel {
+            flex: 1; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white;
+        }
+        #btn-clear { background: #555; }
+        #btn-clear:hover { background: #777; }
+        #btn-record { background: #ff4444; }
+        #btn-record:hover { background: #ff6666; }
+        .recording-active { background: #00d4ff !important; animation: pulse 1s infinite alternate; }
+        
+        @keyframes pulse {
+            from { box-shadow: 0 0 5px #00d4ff; }
+            to { box-shadow: 0 0 20px #00d4ff; }
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <h1>3072 Dimensions: Particle Alchemy</h1>
+        <div class="upload-btn">
+            <span>MP3 파일 선택하여 의식 시작</span>
+            <input type="file" id="audioInput" accept="audio/*">
+        </div>
+        <div id="loading">오디오 및 데이터 분석 중... 잠시만 기다려주세요.</div>
+        <div id="instructions">
+            <strong>[PC 조작]</strong> [우클릭] 폭발/복원 | [ESC] UI 숨김 | [아무 키] UI 표시 | [R] 녹화 시작/종료<br><br>
+            <strong>[VR 기기 조작]</strong><br>
+            [오른쪽 트리거] = 파편 폭발/복원 토글<br>
+            [왼쪽 X/Y 버튼] = 좌측 제어 패널(UI) 표시/숨김 토글<br>
+            [오른쪽 A/B 버튼] = 시뮬레이션 영상 녹화 시작/종료
+        </div>
+    </div>
+
+    <!-- 좌측 컨트롤 패널 -->
+    <div id="control-panel">
+        <h2>차원 관측 시스템</h2>
+        <input type="text" id="search-input" placeholder="생명체 이름 검색 (예: 고래)">
+        <ul id="entity-list"></ul>
+        <div class="btn-group">
+            <button id="btn-clear" class="btn-panel">선택 초기화</button>
+            <button id="btn-record" class="btn-panel">⏺ 녹화 시작 (R)</button>
+        </div>
+    </div>
+
+    <div id="hud">PC: 우클릭(폭발), ESC(UI), R(녹화) | VR: 오른쪽트리거(폭발), 왼쪽X(UI), 오른쪽A(녹화)</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        let audioCtx, analyser, dataArray;
+        let currentState = 'CLUSTER'; 
+        let mainGroup; 
+
+        let particleSystem;
+        let pPositions, pVelocities, originalParticlePos, pColors;
+        let entitiesData = [];
+        let entityMappings = [];
+        let TOTAL_PARTICLE_COUNT = 0;
+
+        let selectedEntities = new Set();
+        let uiVisible = true;
+        
+        // VR 버튼 중복 눌림 방지 플래그
+        let vrToggleBtnPressed = false;
+        let vrRecordBtnPressed = false;
+        let vrTriggerRightPressed = false;
+
+        // 화면 녹화(MediaRecorder) 변수
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+
+        const clock = new THREE.Clock();
+
+        // ------------------ 1. JSON 데이터 로드 ------------------
+        async function loadEntitiesData() {
+            try {
+                const response = await fetch('./entities.json');
+                if(!response.ok) throw new Error("JSON Not Found");
+                entitiesData = await response.json();
+            } catch (error) {
+                entitiesData = [];
+                for(let i=0; i<3072; i++) {
+                    entitiesData.push({ name: `생명체_${i+1}호`, count: Math.floor(Math.random() * 80) + 20 });
+                }
+            }
+
+            entitiesData.sort(() => Math.random() - 0.5);
+
+            let currentIndex = 0;
+            entitiesData.forEach((entity, index) => {
+                const count = entity.count || 50; 
+                const startIndex = currentIndex;
+                const endIndex = currentIndex + count - 1;
+                const color = new THREE.Color().setHSL(index / entitiesData.length, 0.8, 0.6);
+
+                entityMappings.push({
+                    id: index, name: entity.name, startIndex: startIndex, endIndex: endIndex, count: count, color: color
+                });
+                currentIndex += count;
+            });
+            TOTAL_PARTICLE_COUNT = currentIndex;
+        }
+
+        // ------------------ 2. 오디오 입력 처리 ------------------
+        document.getElementById('audioInput').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('loading').style.display = 'block';
+            await loadEntitiesData(); 
+            
+            const reader = new FileReader();
+            reader.onload = function(e) { initAudio(e.target.result); };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function initAudio(arrayBuffer) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioCtx.decodeAudioData(arrayBuffer, function(buffer) {
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                source.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                source.loop = true;
+                source.start(0);
+                
+                document.getElementById('ui').style.display = 'none';
+                document.getElementById('hud').style.display = 'block';
+                document.getElementById('control-panel').style.display = 'flex'; 
+                document.body.appendChild(VRButton.createButton(renderer));
+                
+                initUI(); 
+                initThreeJS();
+                animate();
+            });
+        }
+
+        // ------------------ 3. UI 및 녹화 로직 ------------------
+        function initUI() {
+            const searchInput = document.getElementById('search-input');
+            const clearBtn = document.getElementById('btn-clear');
+            const recordBtn = document.getElementById('btn-record');
+            
+            searchInput.addEventListener('input', (e) => renderList(e.target.value));
+            
+            clearBtn.addEventListener('click', () => {
+                selectedEntities.clear();
+                renderList(searchInput.value);
+                updateParticleColors();
+            });
+
+            recordBtn.addEventListener('click', toggleRecording);
+            renderList();
+        }
+
+        function renderList(filter = '') {
+            const list = document.getElementById('entity-list');
+            list.innerHTML = '';
+            const filtered = entityMappings.filter(e => e.name.includes(filter)).slice(0, 100);
+            
+            filtered.forEach(entity => {
+                const li = document.createElement('li');
+                li.innerHTML = `<span>${entity.name}</span> <span class="badge">${entity.count}</span>`;
+                if (selectedEntities.has(entity.id)) li.classList.add('selected-item');
+                li.addEventListener('click', () => {
+                    selectedEntities.has(entity.id) ? selectedEntities.delete(entity.id) : selectedEntities.add(entity.id);
+                    renderList(filter); 
+                    updateParticleColors(); 
+                });
+                list.appendChild(li);
+            });
+        }
+
+        function updateParticleColors() {
+            if (!particleSystem) return;
+            const isSelectMode = selectedEntities.size > 0;
+
+            for (let i = 0; i < entityMappings.length; i++) {
+                const entity = entityMappings[i];
+                const isSelected = selectedEntities.has(entity.id);
+                let r, g, b;
+                if (!isSelectMode) { r = entity.color.r; g = entity.color.g; b = entity.color.b; } 
+                else if (isSelected) { r = entity.color.r * 1.5; g = entity.color.g * 1.5; b = entity.color.b * 1.5; } 
+                else { r = 0.02; g = 0.02; b = 0.05; }
+
+                for (let p = entity.startIndex; p <= entity.endIndex; p++) {
+                    pColors[p * 3] = r; pColors[p * 3 + 1] = g; pColors[p * 3 + 2] = b;
+                }
+            }
+            particleSystem.geometry.attributes.color.needsUpdate = true;
+        }
+
+        // --- 화면 녹화 기능 (MediaRecorder API) ---
+        function toggleRecording() {
+            const recordBtn = document.getElementById('btn-record');
+            
+            if (isRecording) {
+                // 녹화 종료 및 파일 저장
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.innerText = '⏺ 녹화 시작 (R)';
+                recordBtn.classList.remove('recording-active');
+            } else {
+                // 녹화 시작
+                recordedChunks = [];
+                const stream = renderer.domElement.captureStream(30);
+                
+                // 브라우저 지원에 따라 코덱 자동 선택 (퀘스트는 WebM 호환성 높음)
+                let mimeType = 'video/webm;codecs=vp9';
+                if (MediaRecorder.isTypeSupported('video/mp4')) {
+                    mimeType = 'video/mp4';
+                }
+
+                mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = () => {
+                    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+                    const blob = new Blob(recordedChunks, { type: mimeType });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `CrystalAlchemy_3072D_Record.${ext}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 100);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.innerText = '⏹ 녹화 저장 중지';
+                recordBtn.classList.add('recording-active');
+            }
+        }
+
+        // ------------------ 4. Three.js 초기화 ------------------
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            
+            // [중요 수정] VR 진입 시 검은 화면을 방지하기 위한 배경색 명시적 할당
+            scene.background = new THREE.Color(0x000511);
+            scene.fog = new THREE.FogExp2(0x000511, 0.05);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.6, 2); 
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // VR 설정 및 공간 타입 지정
+            renderer.xr.enabled = true;
+            renderer.xr.setReferenceSpaceType('local-floor'); 
+            
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 1.5, -3);
+            controls.enableDamping = true;
+
+            mainGroup = new THREE.Group();
+            scene.add(mainGroup);
+
+            const ambientLight = new THREE.AmbientLight(0x4466aa, 1.5);
+            scene.add(ambientLight);
+
+            createParticles(); 
+
+            window.addEventListener('contextmenu', (e) => { e.preventDefault(); toggleShatter(); });
+            window.addEventListener('resize', onWindowResize);
+            
+            // PC 키보드 단축키
+            window.addEventListener('keydown', (e) => {
+                if (document.activeElement.id === 'search-input' && e.key !== 'Escape') return;
+                
+                const panel = document.getElementById('control-panel');
+                if (e.key === 'Escape') {
+                    uiVisible = false;
+                    document.activeElement.blur();
+                } else if (e.key === 'r' || e.key === 'R') {
+                    toggleRecording();
+                } else {
+                    uiVisible = true;
+                }
+                panel.style.display = uiVisible ? 'flex' : 'none';
+            });
+
+            toggleShatter(); 
+        }
+
+        function createParticles() {
+            const geo = new THREE.BufferGeometry();
+            pPositions = new Float32Array(TOTAL_PARTICLE_COUNT * 3);
+            pVelocities = new Float32Array(TOTAL_PARTICLE_COUNT * 3);
+            originalParticlePos = new Float32Array(TOTAL_PARTICLE_COUNT * 3);
+            pColors = new Float32Array(TOTAL_PARTICLE_COUNT * 3); 
+            
+            const centerPoint = new THREE.Vector3(0, 1.5, -4); 
+            
+            for (let i = 0; i < TOTAL_PARTICLE_COUNT; i++) {
+                const idx = i * 3;
+                const px = centerPoint.x + (Math.random()-0.5)*2.0;
+                const py = centerPoint.y + (Math.random()-0.5)*2.0;
+                const pz = centerPoint.z + (Math.random()-0.5)*2.0;
+                
+                pPositions[idx] = px; pPositions[idx+1] = py; pPositions[idx+2] = pz;
+                originalParticlePos[idx] = px; originalParticlePos[idx+1] = py; originalParticlePos[idx+2] = pz;
+            }
+
+            geo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+            geo.setAttribute('color', new THREE.BufferAttribute(pColors, 3)); 
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 32;
+            const context = canvas.getContext('2d');
+            context.beginPath(); context.arc(16, 16, 16, 0, Math.PI * 2);
+            context.fillStyle = '#ffffff'; context.fill();
+            const dotTexture = new THREE.CanvasTexture(canvas);
+
+            const mat = new THREE.PointsMaterial({
+                size: 0.03, map: dotTexture, transparent: true, opacity: 0.9,
+                blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true 
+            });
+
+            particleSystem = new THREE.Points(geo, mat);
+            mainGroup.add(particleSystem); 
+            updateParticleColors(); 
+        }
+
+        function toggleShatter() {
+            if (currentState !== 'SHATTERED') {
+                currentState = 'SHATTERED';
+                for (let i = 0; i < TOTAL_PARTICLE_COUNT; i++) {
+                    const idx = i * 3;
+                    pVelocities[idx] = (Math.random() - 0.5) * 15.0;
+                    pVelocities[idx+1] = (Math.random() - 0.5) * 15.0;
+                    pVelocities[idx+2] = (Math.random() - 0.5) * 15.0;
+                }
+            } else {
+                currentState = 'RESTORING';
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() { renderer.setAnimationLoop(render); }
+
+        function render() {
+            const delta = Math.min(clock.getDelta(), 0.1);
+            const time = clock.getElapsedTime();
+
+            // [중요 수정] VR 모드일 때는 PC 시점 컨트롤러를 꺼서 화면 충돌 방지
+            if (!renderer.xr.isPresenting) {
+                controls.update();
+            }
+
+            // --- VR 기기 컨트롤러 버튼 입력 처리 ---
+            const session = renderer.xr.getSession();
+            if (session) {
+                let leftXBPressed = false;
+                let rightABPressed = false;
+                let rightTrigger = false;
+
+                for (const source of session.inputSources) {
+                    if (!source.gamepad) continue;
+                    
+                    // 왼쪽 컨트롤러: X 또는 Y 버튼 (UI 토글) - 인덱스 4, 5
+                    if (source.handedness === 'left') {
+                        if ((source.gamepad.buttons[4] && source.gamepad.buttons[4].pressed) || 
+                            (source.gamepad.buttons[5] && source.gamepad.buttons[5].pressed)) {
+                            leftXBPressed = true;
+                        }
+                    }
+                    
+                    // 오른쪽 컨트롤러: A 또는 B 버튼 (녹화), 트리거 (폭발)
+                    if (source.handedness === 'right') {
+                        if ((source.gamepad.buttons[4] && source.gamepad.buttons[4].pressed) || 
+                            (source.gamepad.buttons[5] && source.gamepad.buttons[5].pressed)) {
+                            rightABPressed = true;
+                        }
+                        if (source.gamepad.buttons[0] && source.gamepad.buttons[0].value > 0.5) {
+                            rightTrigger = true;
+                        }
+                    }
+                }
+
+                // 1. UI 토글 실행
+                if (leftXBPressed && !vrToggleBtnPressed) {
+                    uiVisible = !uiVisible;
+                    document.getElementById('control-panel').style.display = uiVisible ? 'flex' : 'none';
+                    vrToggleBtnPressed = true;
+                } else if (!leftXBPressed) {
+                    vrToggleBtnPressed = false;
+                }
+
+                // 2. 녹화 토글 실행
+                if (rightABPressed && !vrRecordBtnPressed) {
+                    toggleRecording();
+                    vrRecordBtnPressed = true;
+                } else if (!rightABPressed) {
+                    vrRecordBtnPressed = false;
+                }
+
+                // 3. 파편 폭발/복원 토글 실행
+                if (rightTrigger && !vrTriggerRightPressed) {
+                    toggleShatter();
+                    vrTriggerRightPressed = true;
+                } else if (!rightTrigger) {
+                    vrTriggerRightPressed = false;
+                }
+            }
+            // ----------------------------------------
+
+            let audioIntensity = 0;
+            if (analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0; for(let i=0; i<30; i++) sum += dataArray[i]; 
+                audioIntensity = sum / (30 * 255);
+            }
+
+            if (currentState === 'SHATTERED') {
+                for (let i = 0; i < entityMappings.length; i++) {
+                    const entity = entityMappings[i];
+                    
+                    const clusterBaseX = Math.sin(time * 0.5 + entity.id * 0.1) * 3.0;
+                    const clusterBaseY = Math.cos(time * 0.3 + entity.id * 0.2) * 3.0 + 1.5;
+                    const clusterBaseZ = Math.sin(time * 0.7 + entity.id * 0.15) * 3.0 - 4.0;
+                    
+                    const isSelected = selectedEntities.has(entity.id);
+                    const swarmForce = isSelected ? 3.0 : 0.5; 
+
+                    for (let p = entity.startIndex; p <= entity.endIndex; p++) {
+                        let idx = p * 3;
+                        let px = pPositions[idx]; let py = pPositions[idx+1]; let pz = pPositions[idx+2];
+                        
+                        let tFac = time * 0.6;
+                        let windX = Math.cos(tFac + py * 2.0) * 0.5 + Math.sin(tFac * 0.5 + pz);
+                        let windY = Math.sin(tFac + px * 2.0) * 0.5 + Math.cos(tFac * 0.7 + pz);
+                        let windZ = Math.sin(tFac + px * 1.5) * 0.5 + Math.cos(tFac * 0.3 + py);
+
+                        pVelocities[idx] += windX * delta * 4.0;
+                        pVelocities[idx+1] += windY * delta * 4.0;
+                        pVelocities[idx+2] += windZ * delta * 4.0;
+                        
+                        pVelocities[idx] += (clusterBaseX - px) * delta * swarmForce;
+                        pVelocities[idx+1] += (clusterBaseY - py) * delta * swarmForce;
+                        pVelocities[idx+2] += (clusterBaseZ - pz) * delta * swarmForce;
+
+                        pPositions[idx] += pVelocities[idx] * delta;
+                        pPositions[idx+1] += pVelocities[idx+1] * delta;
+                        pPositions[idx+2] += pVelocities[idx+2] * delta;
+                        
+                        pVelocities[idx] *= 0.96; pVelocities[idx+1] *= 0.96; pVelocities[idx+2] *= 0.96;
+                        
+                        if (audioIntensity > 0.6) {
+                            pVelocities[idx] += (Math.random() - 0.5) * 3.0 * audioIntensity;
+                            pVelocities[idx+1] += (Math.random() - 0.5) * 3.0 * audioIntensity;
+                            pVelocities[idx+2] += (Math.random() - 0.5) * 3.0 * audioIntensity;
+                        }
+                    }
+                }
+            } else if (currentState === 'RESTORING') {
+                let allRestored = true;
+                for (let i = 0; i < TOTAL_PARTICLE_COUNT; i++) {
+                    let idx = i * 3;
+                    pPositions[idx] += (originalParticlePos[idx] - pPositions[idx]) * delta * 4.0;
+                    pPositions[idx+1] += (originalParticlePos[idx+1] - pPositions[idx+1]) * delta * 4.0;
+                    pPositions[idx+2] += (originalParticlePos[idx+2] - pPositions[idx+2]) * delta * 4.0;
+
+                    let dx = originalParticlePos[idx] - pPositions[idx];
+                    let dy = originalParticlePos[idx+1] - pPositions[idx+1];
+                    let dz = originalParticlePos[idx+2] - pPositions[idx+2];
+                    if (dx*dx + dy*dy + dz*dz > 0.005) allRestored = false;
+                }
+                if (allRestored) currentState = 'CLUSTER';
+            }
+            
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
